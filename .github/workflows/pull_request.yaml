@@ -1,23 +1,12 @@
 ---
-# This workflow is meant to be hosted in two repositories:
-# - The dispatcher
-# - The renderer
+# This is the renderer half of a workflow
+# For a brief explanation, see:
+# https://github.com/TXButterflies/TXButterflies.github.io/pull/8#issue-595042251
 #
-# The dispatcher runs the dispatch job on a pull_request event, and triggers
-# the renderer to run the render job, using information from the pull request.
-#
-# This level of separation is necessary:
-# https://securitylab.github.com/research/github-actions-preventing-pwn-requests
+# The other half is at:
+# https://github.com/TXButterflies/TXButterflies.github.io/blob/main/.github/workflows/pull_request.yaml
 name: Render Pull Request
 on:
-  # For a description, see:
-  # https://docs.github.com/en/actions/reference/events-that-trigger-workflows#pull_request_target
-  pull_request_target:
-    paths-ignore:
-      - README.md
-    branches:
-      - main
-
   workflow_dispatch:
     inputs:
       pull_request_id:
@@ -27,83 +16,6 @@ on:
         required: true
 
 jobs:
-  dispatch:
-    name: Dispatch to other repository
-    runs-on: ubuntu-latest
-    if: "${{ github.event_name == 'pull_request_target' }}"
-    steps:
-      - name: Run script to trigger GitHub Action workflow in other repository
-        shell: bash
-        env:
-          # Pull Request payload example:
-          # https://docs.github.com/en/developers/webhooks-and-events/webhook-events-and-payloads#pull_request
-          PULL_REQUEST_ID: "${{ github.event.pull_request.number }}"
-          # PERSONAL_ACCESS_TOKEN is a token generated for the account hosting
-          # the rendering repository, not the account running this script.
-          # Generate one here:
-          # https://github.com/settings/tokens/new
-          # The token should have public_repo scope set, and the user the token
-          # was generated for should have the ability to trigger
-          # workflow_dispatch events in the rendering repository.
-          PULL_REQUEST_USER: "${{ secrets.PULL_REQUEST_USER }}"
-          PULL_REQUEST_TOKEN: "${{ secrets.PULL_REQUEST_TOKEN }}"
-        run: |
-          set -eu
-          # jq requires input
-          echo "{}" \
-              | jq --compact-output '{
-              "ref": $github_ref,
-              "inputs": {
-                  "pull_request_id": $pull_request_id,
-              }
-          }' \
-              --arg github_ref "${GITHUB_REF}" \
-              --arg pull_request_id "${PULL_REQUEST_ID}" \
-              | curl \
-              --request POST \
-              --header "Accept: application/vnd.github.v3+json" \
-              --user "${PULL_REQUEST_USER}:${PULL_REQUEST_TOKEN}" \
-              --post301 --post302 --post303 \
-              --data "@-" \
-              'https://api.github.com/repos/TXButterflies/pr.texasbutterfliesmonitoring.org/actions/workflows/pull_request.yaml/dispatches'
-
-      - name: Make Comment
-        shell: bash
-        env:
-          COMMENT_USER: "github-actions"
-          GITHUB_TOKEN: "${{ github.token }}"
-          # See: https://docs.github.com/en/developers/webhooks-and-events/webhook-events-and-payloads#webhook-payload-example-30
-          PULL_REQUEST_COMMENTS_URL: "${{ github.event.pull_request.issue_url }}"
-          HUGO_BASEURL: "https://pr.texasbutterfliesmonitoring.org/${{ github.event.pull_request.number }}/"
-          RENDER_REPOSITORY_OWNER: "${{ github.repository_owner }}"
-          RENDER_REPOSITORY_NAME: "pr.texasbutterfliesmonitoring.org"
-          # This filename
-          WORKFLOW_FILE: "pull_request.yaml"
-        run: |
-          set -eu
-          printf \
-          'The changes in this pull request have been submitted to be included in a demo version of the site.
-                    
-          If [`hugo`](https://gohugo.io/) can build this pull request, [then that build can be viewed here, once the build is finished](%s).
-
-          If you have visited the above link before, you may have to refresh your browser to see the changes. This is due to browsers caching data from websites. [This link has more information about this](https://refreshyourcache.com/en/cache/).
-          
-          If `hugo` encountered an error, [there may be some logs accessible here](<https://github.com/%s/%s/actions/workflows/%s?query=event%3Aworkflow_dispatch+branch%3Amain>).
-          
-          _note: this comment was generated automatically_' \
-              "${HUGO_BASEURL}" \
-              "${RENDER_REPOSITORY_OWNER}" \
-              "${RENDER_REPOSITORY_NAME}" \
-              "${WORKFLOW_FILE}" \
-              | jq '{"body":.}' --raw-input --slurp --compact-output \
-              | curl \
-                  --request POST \
-                  --header "Accept: application/vnd.github.v3+json" \
-                  --user "${COMMENT_USER}:${GITHUB_TOKEN}" \
-                  "${PULL_REQUEST_COMMENTS_URL}/comments" \
-                  --data "@-" \
-                  "https://api.github.com/repos/${RENDER_REPOSITORY_OWNER}/${RENDER_REPOSITORY_NAME}/actions/workflows/pull_request.yaml/dispatches"
-
   render:
     name: Build pull request site with Hugo
     runs-on: ubuntu-latest
