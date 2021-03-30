@@ -14,6 +14,11 @@ on:
           The number assigned to the pull request. See:
           https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/checking-out-pull-requests-locally#modifying-an-inactive-pull-request-locally
         required: true
+      pull_request_event:
+        description: |
+          The whole event payload. See:
+          https://docs.github.com/en/developers/webhooks-and-events/webhook-events-and-payloads#webhook-payload-example-32
+        required: false
 
 jobs:
   render:
@@ -34,7 +39,7 @@ jobs:
         run: |
           # See: https://docs.github.com/en/rest/reference/repos#releases
           set -eu
-          HUGO_DIR="${GITHUB_WORKSPACE}/hugo"
+          HUGO_DIR="${GITHUB_WORKSPACE:-$(pwd)}/hugo"
           mkdir -p "${HUGO_DIR}"
           eval "$(curl --fail \
               --silent \
@@ -85,6 +90,7 @@ jobs:
           REPOSITORY_OF_PULL_REQUEST: "TXButterflies/TXButterflies.github.io"
           SOURCE: "${{ github.workspace }}/pull_request/"
           DESTINATION: "${{ github.workspace }}/gh-pages/${{ github.event.inputs.pull_request_id }}"
+          HUGO_ENVIRONMENT: development
         run: |
           set -eu
           git config --global user.name "${ACTIONS_USERNAME}"
@@ -94,6 +100,11 @@ jobs:
           git remote add origin "https://github.com/${REPOSITORY_OF_PULL_REQUEST}.git"
           git fetch origin "refs/pull/${PULL_REQUEST_ID}/merge"
           git checkout FETCH_HEAD
+          # Add pull_request event payload to the data dir so that hugo can access it
+          if cat "${GITHUB_EVENT_PATH}" | jq -e '.inputs | has("pull_request_event")' > /dev/null 2>&1; then
+              mkdir -p ./data/
+              cat "${GITHUB_EVENT_PATH}" | jq --compact-output '.inputs.pull_request_event' > ./data/pull_request.json
+          fi
           cd "${GITHUB_WORKSPACE}"
           mkdir -p "${DESTINATION}"
           "${HUGO_BIN}" env --source "${SOURCE}"
