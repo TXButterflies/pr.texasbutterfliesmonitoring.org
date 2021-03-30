@@ -101,9 +101,11 @@ jobs:
           git fetch origin "refs/pull/${PULL_REQUEST_ID}/merge"
           git checkout FETCH_HEAD
           # Add pull_request event payload to the data dir so that hugo can access it
+          # DEBUG
+          cat "${GITHUB_EVENT_PATH}"
           if cat "${GITHUB_EVENT_PATH}" | jq -e '.inputs | has("pull_request_event")' > /dev/null 2>&1; then
               mkdir -p ./data/
-              cat "${GITHUB_EVENT_PATH}" | jq --compact-output '.inputs.pull_request_event' > ./data/pull_request.json
+              cat "${GITHUB_EVENT_PATH}" | jq -e '.inputs.pull_request_event' | tee ./data/pull_request.json
           fi
           cd "${GITHUB_WORKSPACE}"
           mkdir -p "${DESTINATION}"
